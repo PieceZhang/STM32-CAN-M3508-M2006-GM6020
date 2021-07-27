@@ -176,7 +176,7 @@ void set_moto_current(CAN_HandleTypeDef* hcan, s16 iq1, s16 iq2, s16 iq3, s16 iq
 	uint8_t Data[8];
 	uint32_t Mailbox=0;
 	
-	CanTx.StdId = 0x201;  // 0x200 + CANID    0x200?
+	CanTx.StdId = 0x200;  // 0x200
 	CanTx.ExtId = 0;  // CAN_ID_STD, ExtId is invalid
 	CanTx.IDE = CAN_ID_STD;
 	CanTx.RTR = CAN_RTR_DATA;

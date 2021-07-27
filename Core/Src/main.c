@@ -20,11 +20,15 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "can.h"
+#include "usart.h"
 #include "gpio.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "bsp_can.h"
+#include "pid.h"
+#include <stdio.h>
+#include <string.h>
 
 /* USER CODE END Includes */
 
@@ -56,7 +60,8 @@ void SystemClock_Config(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-
+PID_TypeDef motor_pid[4];
+int32_t set_spd = 0;
 /* USER CODE END 0 */
 
 /**
@@ -66,7 +71,7 @@ void SystemClock_Config(void);
 int main(void)
 {
   /* USER CODE BEGIN 1 */
-
+	const uint8_t SendBuffer[4]={0x03,0xFC,0xFC,0x03};  // 帧头
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -88,22 +93,51 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_CAN1_Init();
+  MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
 
 	HAL_CAN_Start(&hcan1);
 	my_can_filter_init_recv_all(&hcan1);
 	HAL_CAN_ActivateNotification(&hcan1, CAN_IT_RX_FIFO0_MSG_PENDING);  // enable IT
+	
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+	set_spd = 2500;  // set speed (rpm)
+  for(int i=0; i<4; i++)
+  {	
+    pid_init(&motor_pid[i]);
+    motor_pid[i].f_param_init(&motor_pid[i],PID_Speed,16384,5000,10,0,8000,0,1.5,0.05,0);  
+  }
+	
   while (1)
   {
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-		HAL_GPIO_TogglePin(LED_GPIO_Port, LED_Pin);
-		HAL_Delay(500);
+		
+		/* 山外调试助手虚拟示波器 Virtual oscilloscope */
+		HAL_UART_Transmit(&huart1, (uint8_t *)&SendBuffer[0], 1, 0x0a);
+		HAL_UART_Transmit(&huart1, (uint8_t *)&SendBuffer[1], 1, 0x0a);
+		HAL_UART_Transmit(&huart1, (uint8_t *)&moto_chassis[0].speed_rpm, sizeof(int16_t), 0x0a);
+		HAL_UART_Transmit(&huart1, (uint8_t *)&SendBuffer[2], 1, 0x0a);
+		HAL_UART_Transmit(&huart1, (uint8_t *)&SendBuffer[3], 1, 0x0a);
+		/**************************************************************/
+		
+		/* PID calculation & motor output */
+		for(int i=0; i<4; i++)
+    {	
+      motor_pid[i].target = set_spd; 																							
+      motor_pid[i].f_cal_pid(&motor_pid[i],moto_chassis[i].speed_rpm);    //根据设定值进行PID计算。
+    }
+    set_moto_current(&hcan1, motor_pid[0].output,   //将PID的计算结果通过CAN发送到电机
+                        motor_pid[1].output,
+                        motor_pid[2].output,
+                        motor_pid[3].output);
+		/**************************************************************/
+		
+		HAL_Delay(10);  // 100hz
   }
   /* USER CODE END 3 */
 }
@@ -153,6 +187,18 @@ void SystemClock_Config(void)
 }
 
 /* USER CODE BEGIN 4 */
+
+int fputc(int ch, FILE *f)
+{
+  HAL_UART_Transmit(&huart1, (uint8_t *)&ch, 1, 0xffff);
+  return ch;
+}
+int fgetc(FILE *f)
+{
+  uint8_t ch = 0;
+  HAL_UART_Receive(&huart1, &ch, 1, 0xffff);
+  return ch;
+}
 
 /* USER CODE END 4 */
 
